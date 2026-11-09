@@ -505,6 +505,17 @@ export function getBundledInteractiveAssetPath(name: string): string {
 	return join(getInteractiveAssetsDir(), name);
 }
 
+/** Get the fd executable shipped for a release target. */
+export function getBundledFdPath(
+	targetPlatform: NodeJS.Platform = process.platform,
+	targetArch: string = process.arch,
+): string {
+	const packageDir = getPackageDir();
+	const bundleDir = isBunBinary ? join(packageDir, "bundle") : join(packageDir, "dist", "bundle");
+	const executable = targetPlatform === "win32" ? "fd.exe" : "fd";
+	return join(bundleDir, "vendor", "fd", `${targetPlatform}-${targetArch}`, executable);
+}
+
 let quickJSWasmPath: string | undefined;
 
 /** Called by the Bun entry with the path of the QuickJS wasm file embedded in the compiled executable. */
@@ -600,10 +611,11 @@ try {
 }
 
 const piConfigName: string | undefined = pkg.piConfig?.name;
+export const IS_CELL_APP = process.env.CELL_AGENT_RUNTIME === "1";
 export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".pi";
+export const APP_NAME: string = IS_CELL_APP ? "cell" : piConfigName || "pi";
+export const APP_TITLE: string = IS_CELL_APP ? "CELL" : piConfigName ? APP_NAME : "π";
+export const CONFIG_DIR_NAME: string = IS_CELL_APP ? ".cell" : pkg.piConfig?.configDir || ".pi";
 export const VERSION: string = pkg.version || "0.0.0";
 
 // e.g., PI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
@@ -628,6 +640,10 @@ export function getShareViewerUrl(gistId: string): string {
 
 /** Get the agent config directory (e.g., ~/.pi/agent/) */
 export function getAgentDir(): string {
+	if (IS_CELL_APP) {
+		const cellHome = process.env.CELL_HOME;
+		return join(cellHome ? expandTildePath(cellHome) : join(homedir(), CONFIG_DIR_NAME), "agent");
+	}
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);

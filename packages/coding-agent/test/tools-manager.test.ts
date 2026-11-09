@@ -1,8 +1,10 @@
 import type * as ChildProcess from "node:child_process";
 import type * as Fs from "node:fs";
 import type * as Os from "node:os";
+import { existsSync } from "fs";
 import { arch, platform } from "os";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getBundledFdPath } from "../src/config.ts";
 import { ensureTool, getLatestVersion, type ToolStatus } from "../src/utils/tools-manager.ts";
 
 const originalOffline = process.env.PI_OFFLINE;
@@ -38,6 +40,8 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.mocked(arch).mockReturnValue("x64");
 	vi.mocked(platform).mockReturnValue("linux");
+	vi.mocked(existsSync).mockReset();
+	vi.mocked(existsSync).mockReturnValue(false);
 });
 
 function redirectResponse(location: string): Response {
@@ -112,6 +116,20 @@ describe("getLatestVersion", () => {
 });
 
 describe("ensureTool", () => {
+	it("uses the fd binary bundled for the current release target", async () => {
+		const bundledPath = getBundledFdPath("linux", "x64");
+		vi.mocked(existsSync).mockImplementation((path) => path === bundledPath);
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const statuses: ToolStatus[] = [];
+
+		const result = await ensureTool("fd", (status) => statuses.push(status));
+
+		expect(result).toBe(bundledPath);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(statuses).toEqual([]);
+	});
+
 	it("reports status through a callback without writing to the console", async () => {
 		process.env.PI_OFFLINE = "1";
 		const statuses: ToolStatus[] = [];
@@ -153,8 +171,8 @@ describe("ensureTool", () => {
 		]);
 	});
 
-	// #11209: ARM32 previously fell back to x86-64 release archives.
-	it.each(["arm", "ia32"])("does not download x86-64 binaries on %s", async (architecture) => {
+	// #11209: unsupported architectures previously fell back to x86-64 release archives.
+	it.each(["ppc64", "s390x"])("does not download x86-64 binaries on %s", async (architecture) => {
 		delete process.env.PI_OFFLINE;
 		vi.mocked(arch).mockReturnValue(architecture as NodeJS.Architecture);
 		const fetchMock = vi.fn();

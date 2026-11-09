@@ -6,6 +6,7 @@ import {
 	detectInstallChange,
 	detectInstallMethod,
 	findNodePackageDir,
+	getBundledFdPath,
 	getConfiguredSelfUpdateArgv,
 	getSelfUpdateCommand,
 	getSelfUpdateUnavailableInstruction,
@@ -159,6 +160,21 @@ describe("findNodePackageDir", () => {
 		writeFileSync(join(distDir, "package.json"), "{}");
 
 		expect(findNodePackageDir(bundleDir)).toBe(tempDir);
+	});
+});
+
+describe("getBundledFdPath", () => {
+	test.each([
+		["darwin", "arm64", "fd"],
+		["linux", "x64", "fd"],
+		["win32", "ia32", "fd.exe"],
+	] as const)("resolves the %s/%s release asset", (targetPlatform, targetArch, executable) => {
+		tempDir = mkdtempSync(join(tmpdir(), "pi-package-dir-"));
+		process.env.PI_PACKAGE_DIR = tempDir;
+
+		expect(getBundledFdPath(targetPlatform, targetArch)).toBe(
+			join(tempDir, "dist", "bundle", "vendor", "fd", `${targetPlatform}-${targetArch}`, executable),
+		);
 	});
 });
 

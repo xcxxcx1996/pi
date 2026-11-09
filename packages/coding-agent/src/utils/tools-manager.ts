@@ -4,7 +4,7 @@ import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
-import { getBinDir, VERSION } from "../config.ts";
+import { getBinDir, getBundledFdPath, VERSION } from "../config.ts";
 import { fetchWithRetry } from "./management-http.ts";
 import { getPiUserAgent } from "./pi-user-agent.ts";
 
@@ -31,11 +31,24 @@ interface ToolConfig {
 // Only x64 and arm64 are mapped. Other architectures (e.g. ARM32 `arm`, `ia32`)
 // must not fall back to x86-64 binaries (#11209).
 function getReleaseTarget(plat: string, architecture: string): string | undefined {
-	const archStr = architecture === "arm64" ? "aarch64" : architecture === "x64" ? "x86_64" : undefined;
+	const archStr =
+		architecture === "arm64"
+			? "aarch64"
+			: architecture === "x64"
+				? "x86_64"
+				: architecture === "ia32"
+					? "i686"
+					: architecture === "arm"
+						? "arm"
+						: undefined;
 	if (!archStr) return undefined;
-	if (plat === "darwin") return `${archStr}-apple-darwin.tar.gz`;
-	if (plat === "linux") return `${archStr}-unknown-linux-musl.tar.gz`;
-	if (plat === "win32") return `${archStr}-pc-windows-msvc.zip`;
+	if (plat === "darwin" && (architecture === "arm64" || architecture === "x64")) {
+		return `${archStr}-apple-darwin.tar.gz`;
+	}
+	if (plat === "linux") {
+		return `${archStr}-unknown-linux-${architecture === "arm" ? "musleabihf" : "musl"}.tar.gz`;
+	}
+	if (plat === "win32" && architecture !== "arm") return `${archStr}-pc-windows-msvc.zip`;
 	return undefined;
 }
 
@@ -72,6 +85,10 @@ function commandExists(cmd: string): boolean {
 export function getToolPath(tool: "fd" | "rg"): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
+	if (tool === "fd") {
+		const bundledPath = getBundledFdPath(platform(), arch());
+		if (existsSync(bundledPath)) return bundledPath;
+	}
 
 	// Check our tools directory first
 	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));

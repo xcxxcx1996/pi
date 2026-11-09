@@ -1,0 +1,121 @@
+name: cell-agent-local
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: cell-local-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - litellm-postgres:/var/lib/postgresql/data
+
+  mock-openai:
+    build:
+      context: ./mock-openai
+    environment:
+      PORT: "8080"
+      MOCK_OPENAI_API_KEY: ${CELL_MOCK_OPENAI_API_KEY:-cell-local-upstream-key}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  upload-mcp:
+    build:
+      context: ./upload-mcp
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - cell-uploads:/data/uploads
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.108.0
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      DATABASE_URL: postgresql://litellm:cell-local-postgres@postgres:5432/litellm
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-cell-local-master-key-change-before-shared-use}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:-sk-cell-local-salt-key-change-before-shared-use}
+      MOCK_OPENAI_API_KEY: ${CELL_MOCK_OPENAI_API_KEY:-cell-local-upstream-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-openai:
+        condition: service_healthy
+      upload-mcp:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CELL_LITELLM_PORT:-14000}:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=2)",
+        ]
+      interval: 3s
+      timeout: 4s
+      retries: 60
+      start_period: 20s
+
+  auth-backend:
+    build:
+      context: ./auth-backend
+    environment:
+      PORT: "4010"
+      SUPABASE_URL: ${CELL_DOCKER_SUPABASE_URL:-${SUPABASE_URL:?SUPABASE_URL must be set in .env}}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY must be set in .env}
+      CELL_WEBHOOK_SECRET: ${CELL_WEBHOOK_SECRET:?CELL_WEBHOOK_SECRET must be set in .env}
+      CELL_KEY_ENCRYPTION_KEY: ${CELL_KEY_ENCRYPTION_KEY:?CELL_KEY_ENCRYPTION_KEY must be set in .env}
+      CELL_KEY_ENCRYPTION_KEY_VERSION: ${CELL_KEY_ENCRYPTION_KEY_VERSION:-1}
+      LITELLM_URL: http://litellm:4000
+      CELL_LITELLM_PUBLIC_BASE_URL: ${CELL_LITELLM_PUBLIC_BASE_URL:-http://127.0.0.1:14000/v1}
+      CELL_MCP_SERVERS_JSON: ${CELL_MCP_SERVERS_JSON:-}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-cell-local-master-key-change-before-shared-use}
+      CELL_RECONCILE_INTERVAL_MS: ${CELL_RECONCILE_INTERVAL_MS:-5000}
+    depends_on:
+      litellm:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${CELL_AUTH_BACKEND_PORT:-14010}:4010"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4010/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  litellm-postgres:
+  cell-uploads:

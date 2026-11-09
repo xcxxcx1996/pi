@@ -1,0 +1,22 @@
+model_list:
+  - model_name: cell-test
+    litellm_params:
+      model: openai/cell-test
+      api_base: http://mock-openai:8080/v1
+      api_key: os.environ/MOCK_OPENAI_API_KEY
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 60
+  overwrite_user_with_key_hash: true
+  key_alias_pattern: "^cell-[a-f0-9-]+$"
+
+mcp_servers:
+  upload_file:
+    url: http://upload-mcp:8080/mcp
+    transport: http
+    allow_all_keys: true

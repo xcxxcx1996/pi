@@ -139,6 +139,7 @@ function outputBytes(metafiles) {
 
 for (const entry of [
 	join(codingAgentDistDir, "cli.js"),
+	join(codingAgentDistDir, "cell-cli.js"),
 	join(codingAgentDistDir, "index.js"),
 	join(codingAgentDistDir, "rpc-entry.js"),
 	join(codingAgentDistDir, "utils", "image-resize-worker.js"),
@@ -159,6 +160,7 @@ const mainResult = await build({
 	entryNames: "[name]",
 	entryPoints: {
 		"cli-runtime": join(codingAgentDistDir, "cli.js"),
+		"cell-runtime": join(codingAgentDistDir, "cell-cli.js"),
 		index: join(codingAgentDistDir, "index.js"),
 		"rpc-entry": join(codingAgentDistDir, "rpc-entry.js"),
 	},
@@ -250,10 +252,18 @@ import { createRequire, enableCompileCache } from "node:module";
 enableCompileCache();
 createRequire(import.meta.url)("./cli-runtime.js");
 `;
+const cellLauncher = `#!/usr/bin/env node
+import { enableCompileCache } from "node:module";
+
+enableCompileCache();
+await import("./cell-runtime.js");
+`;
 writeFileSync(join(bundleDir, "cli.js"), cliLauncher);
+writeFileSync(join(bundleDir, "cell.js"), cellLauncher);
 chmodSync(join(bundleDir, "cli.js"), 0o755);
+chmodSync(join(bundleDir, "cell.js"), 0o755);
 chmodSync(join(bundleDir, "rpc-entry.js"), 0o755);
 
-const files = new Set(metafiles.flatMap((metafile) => Object.keys(metafile.outputs))).size + 1;
-const mib = (outputBytes(metafiles) + cliLauncher.length) / (1024 * 1024);
+const files = new Set(metafiles.flatMap((metafile) => Object.keys(metafile.outputs))).size + 2;
+const mib = (outputBytes(metafiles) + cliLauncher.length + cellLauncher.length) / (1024 * 1024);
 console.log(`Built ${relative(repoRoot, bundleDir)} (${files} files, ${mib.toFixed(1)} MiB)`);

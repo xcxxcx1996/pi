@@ -1,8 +1,12 @@
 import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
-import { getAgentDir } from "../config.ts";
+import { CellAuthService } from "../cell/auth-service.ts";
+import { loadCellConfig } from "../cell/config.ts";
+import { createCellLiteLlmProvider } from "../cell/provider.ts";
+import { getAgentDir, IS_CELL_APP } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
+import { AuthStorage } from "./auth-storage.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { ModelRuntime } from "./model-runtime.ts";
 import {
@@ -137,13 +141,33 @@ export async function createAgentSessionServices(
 ): Promise<AgentSessionServices> {
 	const cwd = resolvePath(options.cwd);
 	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getAgentDir();
-	const modelRuntime =
-		options.modelRuntime ??
-		(await ModelRuntime.create({
-			authPath: join(agentDir, "auth.json"),
-			modelsPath: join(agentDir, "models.json"),
+	const startupDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
+	let modelRuntime = options.modelRuntime;
+	if (!modelRuntime && IS_CELL_APP) {
+		const cellConfig = await loadCellConfig(join(agentDir, "models.json"));
+		const credentials = AuthStorage.create(join(agentDir, "auth.json"));
+		const authService = new CellAuthService(cellConfig, credentials);
+		modelRuntime = await ModelRuntime.create({
+			credentials,
+			modelsPath: null,
+			providers: [createCellLiteLlmProvider(cellConfig, authService)],
+			refreshOnCreate: false,
 			signal: options.modelRuntimeSignal,
-		}));
+		});
+		const refresh = await modelRuntime.refresh({ allowNetwork: true, signal: options.modelRuntimeSignal });
+		const gatewayError = refresh.errors.get("litellm");
+		if (gatewayError) {
+			startupDiagnostics.push({
+				type: "warning",
+				message: `CELL Model Gateway is unavailable: ${gatewayError.message}`,
+			});
+		}
+	}
+	modelRuntime ??= await ModelRuntime.create({
+		authPath: join(agentDir, "auth.json"),
+		modelsPath: join(agentDir, "models.json"),
+		signal: options.modelRuntimeSignal,
+	});
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const resourceLoader = new DefaultResourceLoader({
 		...(options.resourceLoaderOptions ?? {}),
@@ -153,8 +177,23 @@ export async function createAgentSessionServices(
 	});
 	await resourceLoader.reload(options.resourceLoaderReloadOptions);
 
-	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
+	const diagnostics: AgentSessionRuntimeDiagnostic[] = [...startupDiagnostics];
 	const extensionsResult = resourceLoader.getExtensions();
+	if (IS_CELL_APP) {
+		for (const registration of [
+			...extensionsResult.runtime.pendingProviderRegistrations,
+			...extensionsResult.runtime.pendingNativeProviderRegistrations,
+			...extensionsResult.runtime.pendingVirtualModelRegistrations,
+		]) {
+			diagnostics.push({
+				type: "warning",
+				message: `CELL ignored a model provider registered by extension "${registration.extensionPath}"; model access must use LiteLLM`,
+			});
+		}
+		extensionsResult.runtime.pendingProviderRegistrations = [];
+		extensionsResult.runtime.pendingNativeProviderRegistrations = [];
+		extensionsResult.runtime.pendingVirtualModelRegistrations = [];
+	}
 	for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
 		try {
 			modelRuntime.registerProvider(name, config);

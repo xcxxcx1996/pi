@@ -4,7 +4,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import chalk from "chalk";
-import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
+import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR, IS_CELL_APP } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 import { getToolListError, type TuiMode } from "../core/settings-manager.ts";
 
@@ -271,6 +271,10 @@ export function parseArgs(args: string[]): Args {
 }
 
 export function printHelp(extensionFlags?: ExtensionFlag[]): void {
+	if (IS_CELL_APP) {
+		printCellHelp();
+		return;
+	}
 	const extensionFlagsText =
 		extensionFlags && extensionFlags.length > 0
 			? `\n${chalk.bold("Extension CLI Flags:")}\n${extensionFlags
@@ -476,5 +480,41 @@ ${chalk.bold("Built-in Tool Names:")}
   grep       - Search file contents (read-only, off by default)
   find       - Find files by glob pattern (read-only, off by default)
   ls         - List directory contents (read-only, off by default)
+`);
+}
+
+function printCellHelp(): void {
+	console.log(`${chalk.bold("CELL Agent")} - Intelligent Agent Runtime
+
+${chalk.bold("Usage:")}
+  cell [options] [--] [@files...] [messages...]
+
+${chalk.bold("Commands:")}
+	cell login [--api-key-stdin] Sign in with a tenant API Key
+	cell logout                 Remove the local CELL login
+	cell whoami                 Show the current tenant and LiteLLM endpoint
+  cell mcp <command>         Manage MCP servers
+  cell config [-l]           Manage CELL resources
+
+${chalk.bold("Core Options:")}
+  --model <pattern>          Select an allowed LiteLLM model
+  --list-models [search]     List models allowed for the current user
+  --print, -p                Process a prompt and exit
+  --continue, -c             Continue the current project's latest session
+  --resume, -r               Pick a CELL session to resume
+  --skill <path>             Load an explicitly selected external skill
+  --no-mcp                   Disable MCP for this run
+  --help, -h                 Show this help
+  --version, -v              Show version
+
+${chalk.bold("Configuration:")}
+  Global:  ~/.cell/agent (or $CELL_HOME/agent)
+  Project: .cell/
+
+${chalk.bold("Environment Variables:")}
+  CELL_HOME                  CELL configuration root
+	CELL_AUTH_URL              Override the CELL Auth Backend base URL
+	CELL_LITELLM_BASE_URL      Development fallback for the LiteLLM /v1 URL
+	CELL_MCP_ALLOWED_ORIGINS   Additional bundled MCP origins, comma-separated
 `);
 }

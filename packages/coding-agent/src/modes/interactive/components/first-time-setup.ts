@@ -1,5 +1,5 @@
 import { Container, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
-import { APP_NAME } from "../../../config.ts";
+import { APP_NAME, APP_TITLE, IS_CELL_APP } from "../../../config.ts";
 import { SYSTEM_THEME_NAME } from "../theme/system-theme.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
@@ -57,7 +57,18 @@ export class FirstTimeSetupComponent extends Container {
 		this.addChild(new Text(theme.fg("accent", SETUP_LOGO_LINES.join("\n")), 1, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(
-			new Text(theme.fg("accent", theme.bold(`Welcome to ${APP_NAME}, the minimal coding agent.`)), 1, 0),
+			new Text(
+				theme.fg(
+					"accent",
+					theme.bold(
+						IS_CELL_APP
+							? `Welcome to ${APP_TITLE}, the intelligent agent runtime.`
+							: `Welcome to ${APP_NAME}, the minimal coding agent.`,
+					),
+				),
+				1,
+				0,
+			),
 		);
 		this.addChild(new Spacer(1));
 
@@ -74,7 +85,9 @@ export class FirstTimeSetupComponent extends Container {
 				new Text(
 					theme.fg(
 						"muted",
-						"Opting in stores a tracking identifier in settings.json and enables anonymous\nusage analytics. This helps us to better debug, reproduce, and resolve issues\nand bugs within Pi. You can observe what is shared using /privacy and make\nchanges anytime in settings.json.",
+						IS_CELL_APP
+							? `Opting in stores a tracking identifier in settings.json and enables anonymous\nusage analytics. This helps ${APP_TITLE} diagnose and resolve problems. You can observe\nwhat is shared using /privacy and change this anytime in settings.json.`
+							: "Opting in stores a tracking identifier in settings.json and enables anonymous\nusage analytics. This helps us to better debug, reproduce, and resolve issues\nand bugs within Pi. You can observe what is shared using /privacy and make\nchanges anytime in settings.json.",
 					),
 					1,
 					0,

@@ -123,6 +123,8 @@ export interface CreateModelRuntimeOptions {
 	signal?: AbortSignal;
 	/** Skip initial catalog and availability refresh. Static models remain available. */
 	refreshOnCreate?: boolean;
+	/** Replace the built-in provider catalog. Product wrappers use this to enforce a gateway boundary. */
+	providers?: readonly Provider[];
 }
 
 export interface ModelRuntimeAuthOverrides extends AuthOperationOptions {
@@ -226,19 +228,21 @@ export class ModelRuntime implements Models {
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
 				: new InMemoryCodingAgentModelsStore());
 		const builtinModelDataGeneratedAt = builtinProviderCatalog.getBuiltinModelDataGeneratedAt();
-		const providers = builtinProviderCatalog.builtinProviders().map((provider) => {
-			if (provider.id === "radius") return provider;
-			// OpenRouter narrows the catalog to the models, limits and prices of the user's key.
-			if (provider.id === "openrouter") {
-				return withPersonalizedCatalog(
-					provider,
-					personalizeOpenRouterCatalog,
-					options.catalogBaseUrl,
-					builtinModelDataGeneratedAt,
-				);
-			}
-			return withRemoteCatalog(provider, options.catalogBaseUrl, builtinModelDataGeneratedAt);
-		});
+		const providers = options.providers
+			? [...options.providers]
+			: builtinProviderCatalog.builtinProviders().map((provider) => {
+					if (provider.id === "radius") return provider;
+					// OpenRouter narrows the catalog to the models, limits and prices of the user's key.
+					if (provider.id === "openrouter") {
+						return withPersonalizedCatalog(
+							provider,
+							personalizeOpenRouterCatalog,
+							options.catalogBaseUrl,
+							builtinModelDataGeneratedAt,
+						);
+					}
+					return withRemoteCatalog(provider, options.catalogBaseUrl, builtinModelDataGeneratedAt);
+				});
 		const runtime = new ModelRuntime(
 			credentials,
 			config,

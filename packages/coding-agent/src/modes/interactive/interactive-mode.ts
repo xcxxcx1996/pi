@@ -55,6 +55,8 @@ import {
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { spawn } from "child_process";
+import { CellAuthService } from "../../cell/auth-service.ts";
+import { loadCellConfig } from "../../cell/config.ts";
 import {
 	APP_NAME,
 	APP_TITLE,
@@ -64,11 +66,13 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getDocsPath,
+	IS_CELL_APP,
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../../core/agent-session-services.ts";
+import { AuthStorage } from "../../core/auth-storage.ts";
 import {
 	CACHE_TTL_MS,
 	type CacheMiss,
@@ -1047,6 +1051,9 @@ export class InteractiveMode {
 			// "Pi vX" line instead, with the key hints below it.
 			const showLogo = supportsPiLogo();
 			const withLogo = (hints: string) => {
+				if (IS_CELL_APP) {
+					return `${theme.fg("accent", theme.bold("CELL Agent"))} ${theme.fg("dim", `v${this.version}`)}\n${hints}`;
+				}
 				if (!showLogo) return `${piWordmark()} ${theme.fg("dim", `v${this.version}`)}\n${hints}`;
 				const [top, bottom] = piLogoLines();
 				return `${top} ${theme.fg("dim", `v${this.version}`)}\n${bottom} ${hints}`;
@@ -1094,7 +1101,12 @@ export class InteractiveMode {
 					`Press ${keyText("app.tools.expand")} to show full startup help${showDetails ? " and loaded resources" : ""}.`,
 				);
 			const onboarding = () =>
-				theme.fg("dim", `Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`);
+				theme.fg(
+					"dim",
+					IS_CELL_APP
+						? "CELL can explain its features. Ask how to use models, tools, skills, or MCP."
+						: "Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.",
+				);
 			const header = new BuiltInHeader(
 				() => `${withLogo(compactInstructions())}\n${compactOnboarding()}\n\n${onboarding()}`,
 				() => `${withLogo(expandedInstructions())}\n\n${onboarding()}`,
@@ -1102,7 +1114,7 @@ export class InteractiveMode {
 				1,
 				0,
 			);
-			if (showLogo) header.onLogoClick = (column, row) => playPiLogo3d(this.renderer, column, row);
+			if (showLogo && !IS_CELL_APP) header.onLogoClick = (column, row) => playPiLogo3d(this.renderer, column, row);
 			this.builtInHeader = header;
 
 			// Setup UI layout
@@ -1365,6 +1377,7 @@ export class InteractiveMode {
 	 * Only shows new entries since last seen version, skips for resumed sessions.
 	 */
 	private getChangelogForDisplay(): string | undefined {
+		if (IS_CELL_APP) return undefined;
 		// Skip changelog for resumed/continued sessions (already have messages)
 		if (this.session.state.messages.length > 0) {
 			return undefined;
@@ -3350,14 +3363,16 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/share") {
-				await this.handleShareCommand();
 				this.editor.setText("");
+				if (IS_CELL_APP) this.showError("Session sharing is not configured for CELL.");
+				else await this.handleShareCommand();
 				return;
 			}
 			if (text === "/bug" || text.startsWith("/bug ")) {
 				const hint = text.slice("/bug".length).trim();
 				this.editor.setText("");
-				await this.handleBugCommand(hint ? hint : undefined);
+				if (IS_CELL_APP) this.showError("Bug reporting is not configured for CELL.");
+				else await this.handleBugCommand(hint ? hint : undefined);
 				return;
 			}
 			if (text === "/copy") {
@@ -3376,8 +3391,9 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/changelog") {
-				this.handleChangelogCommand();
 				this.editor.setText("");
+				if (IS_CELL_APP) this.showError("The CELL changelog is not bundled in this distribution.");
+				else this.handleChangelogCommand();
 				return;
 			}
 			if (text === "/hotkeys") {
@@ -3412,8 +3428,14 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/logout") {
-				this.showOAuthSelector("logout");
 				this.editor.setText("");
+				if (IS_CELL_APP) await this.handleCellLogout();
+				else this.showOAuthSelector("logout");
+				return;
+			}
+			if (text === "/whoami" && IS_CELL_APP) {
+				this.editor.setText("");
+				await this.handleCellWhoami();
 				return;
 			}
 			if (text === "/new") {
@@ -6011,6 +6033,7 @@ export class InteractiveMode {
 	}
 
 	private async handleLoginCommand(providerRef?: string): Promise<void> {
+		if (IS_CELL_APP) providerRef = "litellm";
 		if (!providerRef) {
 			this.showLoginAuthTypeSelector();
 			return;
@@ -6031,6 +6054,38 @@ export class InteractiveMode {
 		}
 
 		this.showLoginProviderSelector(undefined, providerRef);
+	}
+
+	private async cellAuthService(): Promise<CellAuthService> {
+		const agentDir = getAgentDir();
+		return new CellAuthService(
+			await loadCellConfig(path.join(agentDir, "models.json")),
+			AuthStorage.create(path.join(agentDir, "auth.json")),
+		);
+	}
+
+	private async handleCellLogout(): Promise<void> {
+		try {
+			await this.session.modelRuntime.logout("litellm", { signal: AbortSignal.timeout(15_000) });
+			await (await this.cellAuthService()).logout(AbortSignal.timeout(15_000));
+			await this.updateAvailableProviderCount();
+			this.showStatus("Logged out of CELL.");
+		} catch (error) {
+			this.showError(`CELL logout failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	private async handleCellWhoami(): Promise<void> {
+		try {
+			const identity = await (await this.cellAuthService()).whoami(AbortSignal.timeout(15_000));
+			this.showStatus(
+				identity
+					? `${identity.tenant.name} (${identity.tenant.id}) · ${identity.liteLlmUrl}`
+					: "Not logged in to CELL.",
+			);
+		} catch (error) {
+			this.showError(`Could not read CELL identity: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	/** `onBack` reopens the selector the login was started from when the user cancels it. */

@@ -106,6 +106,10 @@
           "title": "Build on Pi",
           "items": [
             {
+              "title": "Build the CELL Product Wrapper",
+              "path": "cell.md"
+            },
+            {
               "title": "Build Extensions",
               "path": "extensions.md"
             },

@@ -34,7 +34,7 @@ import {
 	type McpOAuthSettings,
 	type OAuthChallenge,
 } from "@earendil-works/pi-mcp/oauth";
-import { VERSION } from "../../config.ts";
+import { APP_NAME, VERSION } from "../../config.ts";
 import { resolveConfigValueOrThrow, resolveHeadersOrThrow } from "../../core/resolve-config-value.ts";
 import { sliceTail } from "../../core/tools/truncate.ts";
 import type { McpServerEntry } from "./config.ts";
@@ -85,7 +85,10 @@ function signInRequiredMessage(entry: McpServerEntry): string {
 function usesOAuth(entry: McpServerEntry): boolean {
 	const { config } = entry;
 	if (!("url" in config) || config.auth) return false;
-	return !Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === "authorization");
+	return !Object.keys(config.headers ?? {}).some((header) => {
+		const normalized = header.toLowerCase();
+		return normalized === "authorization" || normalized === "x-litellm-api-key";
+	});
 }
 
 /** `~` and `~/…` (also `~\…` on Windows) name the home directory, like in a shell. */
@@ -360,7 +363,7 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 
 	private async connectOnce(): Promise<McpClient> {
 		const client = new McpClient({
-			name: "pi",
+			name: APP_NAME,
 			version: VERSION,
 			requestTimeoutMs: this.timeoutMs,
 			roots: [{ uri: pathToFileURL(this.cwd).href, name: basename(this.cwd) }],

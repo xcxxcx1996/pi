@@ -1,4 +1,4 @@
-import { APP_NAME } from "../config.ts";
+import { APP_NAME, IS_CELL_APP } from "../config.ts";
 import type { SourceInfo } from "./source-info.ts";
 
 export type SlashCommandSource = "extension" | "prompt" | "skill";
@@ -24,8 +24,12 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import a JSONL session, preserving its ID and working directory" },
-	{ name: "share", description: "Share session via a Radius artifact or a GitHub gist" },
-	{ name: "bug", description: "Report a bug to the Pi developers", argumentHint: "<description>" },
+	...(IS_CELL_APP
+		? []
+		: [
+				{ name: "share", description: "Share session via a Radius artifact or a GitHub gist" },
+				{ name: "bug", description: "Report a bug to the Pi developers", argumentHint: "<description>" },
+			]),
 	{ name: "copy", description: "Copy last agent message to clipboard" },
 	{ name: "name", description: "Set session display name" },
 	{ name: "session", description: "Show session info and stats" },
@@ -34,8 +38,13 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "fork", description: "Create a new fork from a previous user message" },
 	{ name: "clone", description: "Duplicate the current session at the current position" },
 	{ name: "trust", description: "Save project trust decision for future sessions" },
-	{ name: "login", description: "Configure provider authentication", argumentHint: "<provider>" },
-	{ name: "logout", description: "Remove provider authentication" },
+	{
+		name: "login",
+		description: IS_CELL_APP ? "Sign in to CELL" : "Configure provider authentication",
+		...(IS_CELL_APP ? {} : { argumentHint: "<provider>" }),
+	},
+	{ name: "logout", description: IS_CELL_APP ? "Sign out of CELL" : "Remove provider authentication" },
+	...(IS_CELL_APP ? [{ name: "whoami", description: "Show the current CELL identity" }] : []),
 	{ name: "new", description: "Start a new session" },
 	{ name: "compact", description: "Manually compact the session context" },
 	{ name: "resume", description: "Resume another session" },
